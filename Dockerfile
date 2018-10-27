@@ -1,60 +1,51 @@
 # start from a base ubuntu image
 FROM ubuntu
-MAINTAINER Cass Johnston <cassjohnston@gmail.com>
-
-# set users cfg file
-ARG USERS_CFG=users.json
 
 # Install pre-reqs
 RUN apt-get update
-RUN apt-get install -y curl vim sudo wget rsync
-RUN apt-get install -y apache2
+RUN apt-get install -y curl vim sudo wget rsync gnupg lsb-release
 RUN apt-get install -y python
-RUN apt-get install -y supervisor
+
+# Install gcsfuse that enables mounting a Google Cloud Storage bucket.
+RUN export GCSFUSE_REPO=gcsfuse-`lsb_release -c -s` \
+    && echo "deb  http://packages.cloud.google.com/apt $GCSFUSE_REPO main" | tee /etc/apt/sources.list.d/gcsfuse.list; \
+    curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - \
+    && apt-get update \
+    && apt-get install -y gcsfuse
+
+# Clean up
 RUN apt-get clean
 RUN rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+# Add the user UID:1000, GID:1000, home at /app
+RUN groupadd -r app -g 1000 && useradd -u 1000 -r -g app -m -d /app -s /sbin/nologin -c "App user" app && chmod 755 /app
+
 # Fetch  brat
-RUN mkdir /var/www/brat
-RUN curl http://weaver.nlplab.org/~brat/releases/brat-v1.3_Crunchy_Frog.tar.gz > /var/www/brat/brat-v1.3_Crunchy_Frog.tar.gz 
-RUN cd /var/www/brat && tar -xvzf brat-v1.3_Crunchy_Frog.tar.gz
+RUN mkdir /app/brat
+RUN curl http://weaver.nlplab.org/~brat/releases/brat-v1.3_Crunchy_Frog.tar.gz > /app/brat/brat-v1.3_Crunchy_Frog.tar.gz 
+RUN cd /app/brat && tar -xvzf brat-v1.3_Crunchy_Frog.tar.gz
 
-# create a symlink so users can mount their data volume at /bratdata rather than the full path
-RUN mkdir /bratdata && mkdir /bratcfg
-RUN chown -R www-data:www-data /bratdata /bratcfg 
-RUN chmod o-rwx /bratdata /bratcfg
-RUN ln -s /bratdata /var/www/brat/brat-v1.3_Crunchy_Frog/data
-RUN ln -s /bratcfg /var/www/brat/brat-v1.3_Crunchy_Frog/cfg 
+# Create the path where GCS bucket will be mounted and symlink
+# to the data and cfg locations that brat needs
 
-# And make that location a volume
-VOLUME /bratdata
-VOLUME /bratcfg
-
-ADD brat_install_wrapper.sh /usr/bin/brat_install_wrapper.sh
-RUN chmod +x /usr/bin/brat_install_wrapper.sh
-
-# Make sure apache can access it
-RUN chown -R www-data:www-data /var/www/brat/brat-v1.3_Crunchy_Frog/
-
-ADD 000-default.conf /etc/apache2/sites-available/000-default.conf
+RUN mkdir -p  /app/seralabs-ml/brat-annotator/data \
+  && mkdir -p /app/seralabs-ml/brat-annotator/cfg
+RUN ln -s /app/seralabs-ml/brat-annotator/data /app/brat/brat-v1.3_Crunchy_Frog/data
+RUN ln -s /app/seralabs-ml/brat-annotator/cfg /app/brat/brat-v1.3_Crunchy_Frog/cfg
 
 # add the user patching script
-ADD user_patch.py /var/www/brat/brat-v1.3_Crunchy_Frog/user_patch.py
+ADD user_patch.py /app/brat/brat-v1.3_Crunchy_Frog/user_patch.py
+ADD patch_and_start.sh /app/brat/brat-v1.3_Crunchy_Frog/patch_and_start.sh
 
-# Enable cgi
-RUN a2enmod cgi
+RUN chown -R app:app /app
 
-EXPOSE 80
+USER app
+WORKDIR /app/brat/brat-v1.3_Crunchy_Frog/
 
-# We can't use apachectl as an entrypoint because it starts apache and then exits, taking your container with it. 
-# Instead, use supervisor to monitor the apache process
-RUN mkdir -p /var/log/supervisor
+RUN chmod o-rwx /app/seralabs-ml
+RUN chmod +x /app/brat/brat-v1.3_Crunchy_Frog/patch_and_start.sh
+RUN chmod +x /app/brat/brat-v1.3_Crunchy_Frog/install.sh
 
-ADD supervisord.conf /etc/supervisor/conf.d/supervisord.conf 
+EXPOSE 8001
 
-CMD ["/usr/bin/supervisord"]
-
-
-
-
-
+CMD ./patch_and_start.sh

@@ -1,0 +1,113 @@
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: ${SERA_ENV}
+  labels:
+    name: ${SERA_ENV}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-brat
+  namespace: ${SERA_ENV}
+  labels:
+    app: brat
+    env: ${SERA_ENV}
+spec:
+  replicas: ${REPLICAS}
+  selector:
+    matchLabels:
+      app: brat
+      env: ${SERA_ENV}
+  template:
+    metadata:
+      labels:
+        app: brat
+        env: ${SERA_ENV}
+    spec:
+      containers:
+        - name: brat
+          image: ${DOCKER_IMAGE_PREFIX}brat:${TAG}
+          imagePullPolicy: ${PULL_POLICY}
+          ports:
+          - containerPort: 8001
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - SYS_ADMIN
+          lifecycle:
+            preStop:
+              exec:
+                command: ["fusermount", "-u", "/app/seralabs-ml"]
+          env:
+          - name: SERA_ENV
+            value: ${SERA_ENV}
+          - name: RELEASE_TAG
+            value: ${TAG}
+          - name: BRAT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: ${SERA_ENV}-brat-credentials
+                key: brat_username
+          - name: BRAT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ${SERA_ENV}-brat-credentials
+                key: brat_password
+          - name: BRAT_EMAIL
+            valueFrom:
+              secretKeyRef:
+                name: ${SERA_ENV}-brat-credentials
+                key: brat_email
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8001
+              scheme: "HTTP"              
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8001
+              scheme: "HTTP"
+            periodSeconds: 30
+          volumeMounts:
+            - name: ${SERA_ENV}-cloud-storage-credentials
+              mountPath: /secrets/cloudstorage
+              readOnly: true
+      volumes:
+        - name: ${SERA_ENV}-cloud-storage-credentials
+          secret:
+            secretName: ${SERA_ENV}-cloud-storage-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-brat
+  namespace: ${SERA_ENV}
+spec:
+  selector:
+    app: brat
+    env: ${SERA_ENV}
+  ports:
+  - protocol: TCP
+    port: 8001
+    targetPort: 8001
+  type: NodePort
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ingress-brat
+  namespace: ${SERA_ENV}
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+    - http:
+        paths:
+        - path: /
+          backend:
+            serviceName: service-brat
+            servicePort: 8001
