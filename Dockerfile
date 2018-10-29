@@ -35,6 +35,11 @@ RUN ln -s /app/seralabs-ml/brat-annotator/cfg /app/brat/brat-v1.3_Crunchy_Frog/c
 
 # add the user patching script
 ADD user_patch.py /app/brat/brat-v1.3_Crunchy_Frog/user_patch.py
+
+# override with dispatch file that requires tougher authentication
+ADD dispatch.py /app/brat/brat-v1.3_Crunchy_Frog/server/src/dispatch.py
+
+# add start script
 ADD patch_and_start.sh /app/brat/brat-v1.3_Crunchy_Frog/patch_and_start.sh
 
 RUN chown -R app:app /app
