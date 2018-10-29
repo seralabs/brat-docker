@@ -1,4 +1,7 @@
-# Brat with Docker + Kubernetes on Google Cloud with data stored in Google Cloud storage.
+# Brat with Docker + Kubernetes on Google Cloud with data stored in Google Cloud Storage.
+
+NOTE: Data is served from Google Cloud Storage (which costs money)!
+
 
 1. Create a Google Service Account with Google Cloud Storage Object Editor privileges.
 2. Download the json credentials from above, and create a kubernetes secret from file.
